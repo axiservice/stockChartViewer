@@ -1,0 +1,852 @@
+package stockChartViewer;
+import javax.swing.*;
+import javax.swing.Timer;
+
+import java.awt.*;
+import java.awt.event.*;
+import java.io.*;
+import java.net.InetSocketAddress;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.List;
+import java.util.concurrent.*;
+import javax.swing.border.EmptyBorder;
+import javax.swing.filechooser.FileNameExtensionFilter;
+
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
+
+public class StockChartApp_V11R01 extends JFrame {
+    private CandlestickChart chart;
+    private JLabel statusLabel;
+    private List<OHLCVData> data = new ArrayList<>();
+    private HttpServer server;
+    private int serverPort = 8080;
+    private int maxBufferSize = 1000; // Dimensione default del buffer
+    private boolean realtimeUpdatesEnabled = false;
+    private boolean autoScroll = true; // Auto-scroll sul grafico quando arrivano nuovi dati
+    
+    public StockChartApp_V11R01() {
+        setTitle("Visualizzatore Quotazioni di Borsa");
+        setSize(1200, 800);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLocationRelativeTo(null);
+        
+        // Menu per caricare file
+        JMenuBar menuBar = new JMenuBar();
+        JMenu fileMenu = new JMenu("File");
+        JMenuItem openItem = new JMenuItem("Apri file OHLCV...");
+        JMenuItem exitItem = new JMenuItem("Esci");
+        
+        openItem.addActionListener(e -> loadDataFromFile());
+        exitItem.addActionListener(e -> {
+            stopServer();
+            System.exit(0);
+        });
+        
+        fileMenu.add(openItem);
+        fileMenu.addSeparator();
+        fileMenu.add(exitItem);
+        
+        // Menu Server
+        JMenu serverMenu = new JMenu("Server");
+        JMenuItem startServerItem = new JMenuItem("Avvia Server REST");
+        JMenuItem stopServerItem = new JMenuItem("Ferma Server REST");
+        JMenuItem configServerItem = new JMenuItem("Configura Server...");
+        
+        startServerItem.addActionListener(e -> startServer());
+        stopServerItem.addActionListener(e -> stopServer());
+        configServerItem.addActionListener(e -> configureServer());
+        
+        serverMenu.add(startServerItem);
+        serverMenu.add(stopServerItem);
+        serverMenu.addSeparator();
+        serverMenu.add(configServerItem);
+        
+        menuBar.add(fileMenu);
+        menuBar.add(serverMenu);
+        setJMenuBar(menuBar);
+        
+        // Pannello principale
+        JPanel mainPanel = new JPanel(new BorderLayout());
+        mainPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
+        
+        // Area grafico
+        chart = new CandlestickChart();
+        mainPanel.add(chart, BorderLayout.CENTER);
+        
+        // Barra di stato
+        statusLabel = new JLabel("Pronto. Caricare un file OHLCV dal menu File.");
+        statusLabel.setBorder(new EmptyBorder(5, 5, 5, 5));
+        mainPanel.add(statusLabel, BorderLayout.SOUTH);
+        
+        add(mainPanel);
+        setVisible(true);
+    }
+    
+    private void loadDataFromFile() {
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setDialogTitle("Apri file OHLCV");
+        fileChooser.setFileFilter(new FileNameExtensionFilter("File CSV", "csv", "txt"));
+        
+        int result = fileChooser.showOpenDialog(this);
+        if (result == JFileChooser.APPROVE_OPTION) {
+            try {
+                data = readOHLCVFile(fileChooser.getSelectedFile());
+                chart.setData(data);
+                statusLabel.setText("File caricato: " + fileChooser.getSelectedFile().getName() + 
+                                    " - " + data.size() + " record trovati.");
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, 
+                    "Errore durante il caricamento del file: " + ex.getMessage(),
+                    "Errore", JOptionPane.ERROR_MESSAGE);
+                statusLabel.setText("Errore nel caricamento del file.");
+            }
+        }
+    }
+    
+    private List<OHLCVData> readOHLCVFile(File file) throws IOException {
+        List<OHLCVData> dataList = new ArrayList<>();
+        BufferedReader reader = new BufferedReader(new FileReader(file));
+        String line;
+        boolean firstLine = true;
+        
+        while ((line = reader.readLine()) != null) {
+            if (firstLine) {
+                firstLine = false;
+                continue; // Salta intestazione
+            }
+            
+            String[] values = line.split(",");
+            if (values.length < 6) {
+                continue; // Skip line se non ha abbastanza colonne
+            }
+            
+            try {
+                // Presupposto: Date, Open, High, Low, Close, Volume
+                String date = values[0].trim();
+                double open = Double.parseDouble(values[1].trim());
+                double high = Double.parseDouble(values[2].trim());
+                double low = Double.parseDouble(values[3].trim());
+                double close = Double.parseDouble(values[4].trim());
+                long volume = Long.parseLong(values[5].trim());
+                
+                dataList.add(new OHLCVData(date, open, high, low, close, volume));
+            } catch (NumberFormatException e) {
+                System.err.println("Errore nella conversione dei dati: " + line);
+            }
+        }
+        
+        reader.close();
+        return dataList;
+    }
+    
+    private void startServer() {
+        if (server != null) {
+            JOptionPane.showMessageDialog(this, 
+                "Il server è già in esecuzione sulla porta " + serverPort,
+                "Server già attivo", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        
+        try {
+            server = HttpServer.create(new InetSocketAddress(serverPort), 0);
+            server.createContext("/api/ohlcv", new OHLCVHandler());
+            server.setExecutor(Executors.newCachedThreadPool());
+            server.start();
+            
+            realtimeUpdatesEnabled = true;
+            statusLabel.setText("Server REST avviato sulla porta " + serverPort);
+            
+            JOptionPane.showMessageDialog(this, 
+                "Server REST avviato sulla porta " + serverPort + "\n" +
+                "Endpoint: http://localhost:" + serverPort + "/api/ohlcv",
+                "Server avviato", JOptionPane.INFORMATION_MESSAGE);
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this, 
+                "Errore nell'avvio del server: " + e.getMessage(),
+                "Errore Server", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+    
+    private void stopServer() {
+        if (server == null) {
+            return;
+        }
+        
+        server.stop(0);
+        server = null;
+        realtimeUpdatesEnabled = false;
+        statusLabel.setText("Server REST fermato");
+        
+        JOptionPane.showMessageDialog(this, 
+            "Server REST fermato",
+            "Server fermato", JOptionPane.INFORMATION_MESSAGE);
+    }
+    
+    private void configureServer() {
+        JPanel panel = new JPanel(new GridLayout(2, 2, 10, 10));
+        
+        JSpinner portSpinner = new JSpinner(new SpinnerNumberModel(serverPort, 1024, 65535, 1));
+        JSpinner bufferSpinner = new JSpinner(new SpinnerNumberModel(maxBufferSize, 10, 10000, 10));
+        
+        panel.add(new JLabel("Porta del server:"));
+        panel.add(portSpinner);
+        panel.add(new JLabel("Dimensione buffer (barre):"));
+        panel.add(bufferSpinner);
+        
+        int result = JOptionPane.showConfirmDialog(this, panel, 
+            "Configurazione Server", JOptionPane.OK_CANCEL_OPTION);
+        
+        if (result == JOptionPane.OK_OPTION) {
+            boolean restartServer = server != null;
+            
+            if (restartServer) {
+                stopServer();
+            }
+            
+            serverPort = (Integer) portSpinner.getValue();
+            maxBufferSize = (Integer) bufferSpinner.getValue();
+            
+            if (restartServer) {
+                startServer();
+            }
+        }
+    }
+    
+    class OHLCVHandlerCSV implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try {
+                // Consenti solo richieste POST
+                if ("POST".equals(exchange.getRequestMethod())) {
+                    InputStreamReader isr = new InputStreamReader(exchange.getRequestBody(), "UTF-8");
+                    BufferedReader br = new BufferedReader(isr);
+                    StringBuilder requestBody = new StringBuilder();
+                    String line;
+                    while ((line = br.readLine()) != null) {
+                        requestBody.append(line);
+                    }
+                    
+                    // Elabora i dati ricevuti
+                    final String receivedData = requestBody.toString();
+                    
+                    // Parse e aggiunta dei dati in modo thread-safe usando SwingUtilities
+                    SwingUtilities.invokeLater(() -> {
+                        try {
+                            OHLCVData data = parseOHLCVLine(receivedData);
+                            if (data != null) {
+                                addOHLCVData(data);
+                            }
+                        } catch (Exception e) {
+                            System.err.println("Errore nell'elaborazione dei dati ricevuti: " + e.getMessage());
+                        }
+                    });
+                    
+                    // Risposta con conferma
+                    String response = "Dati OHLCV ricevuti con successo";
+                    exchange.sendResponseHeaders(200, response.length());
+                    OutputStream os = exchange.getResponseBody();
+                    os.write(response.getBytes());
+                    os.close();
+                    
+                } else if ("GET".equals(exchange.getRequestMethod())) {
+                    // Fornire informazioni sull'endpoint o stato del server
+                    String response = "OHLCV REST Endpoint attivo. Utilizzare POST per inviare dati nel formato: data,open,high,low,close,volume";
+                    exchange.sendResponseHeaders(200, response.length());
+                    OutputStream os = exchange.getResponseBody();
+                    os.write(response.getBytes());
+                    os.close();
+                } else {
+                    // Metodo non supportato
+                    String response = "Metodo non supportato";
+                    exchange.sendResponseHeaders(405, response.length());
+                    OutputStream os = exchange.getResponseBody();
+                    os.write(response.getBytes());
+                    os.close();
+                }
+            } catch (Exception e) {
+                String response = "Errore nell'elaborazione della richiesta: " + e.getMessage();
+                exchange.sendResponseHeaders(500, response.length());
+                OutputStream os = exchange.getResponseBody();
+                os.write(response.getBytes());
+                os.close();
+                e.printStackTrace();
+            }
+        }
+    }
+    
+    // Handler per il server REST
+    class OHLCVHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if ("POST".equals(exchange.getRequestMethod())) {
+                // Leggi il corpo della richiesta
+                InputStream is = exchange.getRequestBody();
+                BufferedReader reader = new BufferedReader(new InputStreamReader(is));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    sb.append(line);
+                }
+                final String body = sb.toString();
+                
+                // Elabora i dati OHLCV
+                try {
+                    //final OHLCVData newData = parseOHLCVJson(body);
+                    final OHLCVData newData = parseOHLCVLine(body);
+                    
+                    // Aggiorna i dati nell'EDT (Event Dispatch Thread)
+                    SwingUtilities.invokeLater(() -> {
+                        addRealtimeData(newData);
+                    });
+                    
+                    // Rispondi con successo
+                    String response = "{\"status\":\"success\"}";
+                    exchange.sendResponseHeaders(200, response.length());
+                    OutputStream os = exchange.getResponseBody();
+                    os.write(response.getBytes());
+                    os.close();
+                } catch (Exception e) {
+                    // Rispondi con errore
+                    String response = "{\"status\":\"error\",\"message\":\"" + e.getMessage() + "\"}";
+                    exchange.sendResponseHeaders(400, response.length());
+                    OutputStream os = exchange.getResponseBody();
+                    os.write(response.getBytes());
+                    os.close();
+                }
+            } else {
+                // Metodo non permesso
+                String response = "{\"status\":\"error\",\"message\":\"Solo metodo POST supportato\"}";
+                exchange.sendResponseHeaders(405, response.length());
+                OutputStream os = exchange.getResponseBody();
+                os.write(response.getBytes());
+                os.close();
+            }
+        }
+    }
+    
+    private OHLCVData parseOHLCVLine(String line) {
+        String[] values = line.split(";");
+        if (values.length < 6) {
+            return null; // Skip line se non ha abbastanza colonne
+        }
+        
+        try {
+            // Presupposto: Date, Open, High, Low, Close, Volume
+            String date = values[0].trim();
+            double open = numberConverterUtils(values[1]); //Double.parseDouble(values[1].replace(",", ".").trim());
+            double high = numberConverterUtils(values[2]); //Double.parseDouble(values[2].trim());
+            double low = numberConverterUtils(values[3]); //Double.parseDouble(values[3].trim());
+            double close = numberConverterUtils(values[4]); //Double.parseDouble(values[4].trim());
+            long volume = Long.parseLong(values[5].trim());
+            
+            return new OHLCVData(date, open, high, low, close, volume);
+        } catch (NumberFormatException e) {
+            System.err.println("Errore nella conversione dei dati: " + line);
+            return null;
+        }
+    }
+    
+    private Double numberConverterUtils(String n) {return Double.parseDouble(n.replace(",", ".").trim());}
+    
+    // Aggiunge un nuovo dato OHLCV e mantiene la dimensione del buffer
+    private synchronized void addOHLCVData(OHLCVData newData) {
+        if (data == null) {
+            data = new ArrayList<>();
+        }
+        
+        // Aggiungi il nuovo dato
+        data.add(newData);
+        
+        // Limita la dimensione del buffer
+        if (data.size() > maxBufferSize) {
+            data = data.subList(data.size() - maxBufferSize, data.size());
+        }
+        
+        // Aggiorna il grafico
+        chart.setData(data);
+        
+        // Auto-scroll se attivato
+        if (autoScroll && data.size() > 0) {
+            int visibleBars = chart.calculateVisibleBars();
+            int startBar = Math.max(0, data.size() - visibleBars);
+            chart.setStartBar(startBar);
+        }
+        
+        // Aggiorna la barra di stato
+        SwingUtilities.invokeLater(() -> {
+            statusLabel.setText("Dati ricevuti: " + data.size() + " record nel buffer.");
+        });
+    }
+    
+    // Parsing dei dati JSON in formato OHLCV
+    private OHLCVData parseOHLCVJson(String json) {
+        // Implementazione semplice del parsing JSON
+        // In un'applicazione reale si potrebbe usare una libreria JSON
+        json = json.trim();
+        if (!json.startsWith("{") || !json.endsWith("}")) {
+            throw new IllegalArgumentException("Formato JSON non valido");
+        }
+        
+        String date = "";
+        double open = 0, high = 0, low = 0, close = 0;
+        long volume = 0;
+        
+        // Rimuovi le parentesi graffe
+        json = json.substring(1, json.length() - 1);
+        
+        // Dividi per virgole non tra virgolette
+        String[] pairs = json.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)");
+        
+        for (String pair : pairs) {
+            String[] keyValue = pair.split(":");
+            if (keyValue.length != 2) continue;
+            
+            String key = keyValue[0].trim().replace("\"", "");
+            String value = keyValue[1].trim().replace("\"", "");
+            
+            switch (key.toLowerCase()) {
+                case "date":
+                    date = value;
+                    break;
+                case "open":
+                    open = Double.parseDouble(value);
+                    break;
+                case "high":
+                    high = Double.parseDouble(value);
+                    break;
+                case "low":
+                    low = Double.parseDouble(value);
+                    break;
+                case "close":
+                    close = Double.parseDouble(value);
+                    break;
+                case "volume":
+                    volume = Long.parseLong(value);
+                    break;
+            }
+        }
+        
+        return new OHLCVData(date, open, high, low, close, volume);
+    }
+    
+    // Aggiunge dati in tempo reale al buffer
+    private void addRealtimeData(OHLCVData newData) {
+        // Aggiungi il nuovo dato
+        data.add(newData);
+        
+        // Limita la dimensione del buffer
+        if (data.size() > maxBufferSize) {
+            data = data.subList(data.size() - maxBufferSize, data.size());
+        }
+        
+        // Aggiorna il grafico
+        chart.setData(data);
+        
+        // Scorri alla fine del grafico (mostra sempre l'ultimo dato)
+        chart.scrollToEnd();
+        
+        statusLabel.setText("Aggiornamento in tempo reale: " + newData.date + 
+                          " - Prezzo: " + newData.close);
+    }
+    
+    public static void main(String[] args) {
+        try {
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        
+        SwingUtilities.invokeLater(() -> new StockChartApp_V11R01());
+    }
+    
+    // Classe interna per dati OHLCV
+    static class OHLCVData {
+        String date;
+        double open;
+        double high;
+        double low;
+        double close;
+        long volume;
+        
+        public OHLCVData(String date, double open, double high, double low, double close, long volume) {
+            this.date = date;
+            this.open = open;
+            this.high = high;
+            this.low = low;
+            this.close = close;
+            this.volume = volume;
+        }
+        
+        public boolean isUp() {
+            return close >= open;
+        }
+    }
+    
+    // Classe per il grafico a candele
+    class CandlestickChart extends JPanel {
+        private List<OHLCVData> chartData = new ArrayList<>();
+        private double minPrice = Double.MAX_VALUE;
+        private double maxPrice = Double.MIN_VALUE;
+        private int mouseX = -1;
+        private int mouseY = -1;
+        private Color bullishColor = new Color(0, 150, 50);  // Verde per rialzo
+        private Color bearishColor = new Color(200, 0, 0);    // Rosso per ribasso
+        private int candleWidth = 8;
+        private int candleGap = 2;
+        private double priceScale;
+        private int visibleBars;
+        private int chartLeftMargin = 60;
+        private int chartRightMargin = 30;
+        private int chartTopMargin = 30;
+        private int chartBottomMargin = 30;
+        private int startBar = 0;  // Primo indice da mostrare
+        private boolean autoScaleY = true;
+        private double manualMinPrice = Double.MIN_VALUE;
+        private double manualMaxPrice = Double.MAX_VALUE;
+        private Timer autoScaleTimer;
+        private boolean dynamicScaling = true;
+        
+        public CandlestickChart() {
+            setBackground(Color.BLACK);
+            
+            // Gestione degli eventi del mouse
+            MouseAdapter mouseHandler = new MouseAdapter() {
+                @Override
+                public void mouseMoved(MouseEvent e) {
+                    mouseX = e.getX();
+                    mouseY = e.getY();
+                    repaint();
+                }
+                
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    mouseX = -1;
+                    mouseY = -1;
+                    repaint();
+                }
+                
+                @Override
+                public void mouseWheelMoved(MouseWheelEvent e) {
+                    int notches = e.getWheelRotation();
+                    if (notches < 0) {
+                        // Zoom in
+                        candleWidth = Math.min(30, candleWidth + 1);
+                    } else {
+                        // Zoom out
+                        candleWidth = Math.max(2, candleWidth - 1);
+                    }
+                    repaint();
+                }
+                
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    if (e.getClickCount() == 2) {
+                        // Doppio click per attivare/disattivare scaling automatico
+                        dynamicScaling = !dynamicScaling;
+                        if (dynamicScaling) {
+                            // Quando si riattiva lo scaling dinamico, ricaricare min/max correnti
+                            recalculateMinMax();
+                        }
+                        repaint();
+                    }
+                }
+            };
+            
+            addMouseMotionListener(mouseHandler);
+            addMouseListener(mouseHandler);
+            addMouseWheelListener(mouseHandler);
+            
+            // Timer per lo scaling dinamico lento e fluido (per evitare flickering)
+            autoScaleTimer = new Timer(200, e -> {
+                if (dynamicScaling && !chartData.isEmpty()) {
+                    animatePriceScale();
+                }
+            });
+            autoScaleTimer.start();
+            
+            // Popover menu contestuale
+            JPopupMenu popupMenu = new JPopupMenu();
+            JCheckBoxMenuItem autoScaleItem = new JCheckBoxMenuItem("Scaling Automatico Asse Y", dynamicScaling);
+            autoScaleItem.addActionListener(e -> {
+                dynamicScaling = autoScaleItem.isSelected();
+                if (dynamicScaling) {
+                    recalculateMinMax();
+                }
+                repaint();
+            });
+            popupMenu.add(autoScaleItem);
+            
+            setComponentPopupMenu(popupMenu);
+        }
+        
+        private void animatePriceScale() {
+            // Calcola min/max ideali in base ai dati visibili
+            double idealMin = Double.MAX_VALUE;
+            double idealMax = Double.MIN_VALUE;
+            
+            int endBar = Math.min(chartData.size(), startBar + visibleBars);
+            for (int i = startBar; i < endBar; i++) {
+                OHLCVData bar = chartData.get(i);
+                idealMin = Math.min(idealMin, bar.low);
+                idealMax = Math.max(idealMax, bar.high);
+            }
+            
+            // Aggiungi un po' di margine
+            double range = Math.max(0.1, idealMax - idealMin);
+            idealMin -= range * 0.05;
+            idealMax += range * 0.05;
+            
+            // Anima verso i valori ideali
+            double currentRange = maxPrice - minPrice;
+            double idealRange = idealMax - idealMin;
+            
+            // Se la differenza è piccola, applica subito
+            if (Math.abs((currentRange / idealRange) - 1.0) < 0.001 && 
+                Math.abs(minPrice - idealMin) < 0.001 * idealRange) {
+                return; // Già abbastanza simili
+            }
+            
+            // Animazione fluida
+            minPrice = minPrice + (idealMin - minPrice) * 0.2;
+            maxPrice = maxPrice + (idealMax - maxPrice) * 0.2;
+            
+            repaint();
+        }
+        
+        private void recalculateMinMax() {
+            if (chartData == null || chartData.isEmpty()) return;
+            
+            // Calcola il minimo e massimo per la scala considerando solo i dati visibili
+            minPrice = Double.MAX_VALUE;
+            maxPrice = Double.MIN_VALUE;
+            
+            int endBar = Math.min(chartData.size(), startBar + calculateVisibleBars());
+            for (int i = startBar; i < endBar; i++) {
+                if (i >= chartData.size()) break;
+                OHLCVData bar = chartData.get(i);
+                minPrice = Math.min(minPrice, bar.low);
+                maxPrice = Math.max(maxPrice, bar.high);
+            }
+            
+            // Aggiungi un po' di margine
+            double range = maxPrice - minPrice;
+            minPrice -= range * 0.05;
+            maxPrice += range * 0.05;
+        }
+        
+        public void setStartBar(int startBar) {
+            this.startBar = startBar;
+            repaint();
+        }
+        
+        public void setData(List<OHLCVData> data) {
+            this.chartData = data;
+            
+            if (data != null && !data.isEmpty()) {
+                if (dynamicScaling) {
+                    // Primo caricamento o reset della scala
+                    if (minPrice == Double.MAX_VALUE || maxPrice == Double.MIN_VALUE) {
+                        recalculateMinMax();
+                    }
+                }
+                
+                // Scorri alla fine 
+                startBar = Math.max(0, data.size() - calculateVisibleBars());
+            }
+            
+            repaint();
+        }
+        
+        private int calculateVisibleBars() {
+            if (getWidth() <= chartLeftMargin + chartRightMargin) return 0;
+            return (getWidth() - chartLeftMargin - chartRightMargin) / (candleWidth + candleGap);
+        }
+        
+        public void scrollToEnd() {
+            if (chartData != null && !chartData.isEmpty()) {
+                startBar = Math.max(0, chartData.size() - calculateVisibleBars());
+                repaint();
+            }
+        }
+        
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            Graphics2D g2 = (Graphics2D) g;
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            
+            int width = getWidth();
+            int height = getHeight();
+            int chartWidth = width - chartLeftMargin - chartRightMargin;
+            int chartHeight = height - chartTopMargin - chartBottomMargin;
+            
+            // Se non ci sono dati, mostra un messaggio
+            if (chartData == null || chartData.isEmpty()) {
+                g2.setColor(Color.WHITE);
+                g2.setFont(new Font("SansSerif", Font.BOLD, 16));
+                String message = "Nessun dato disponibile. Caricare un file OHLCV.";
+                int messageWidth = g2.getFontMetrics().stringWidth(message);
+                g2.drawString(message, (width - messageWidth) / 2, height / 2);
+                return;
+            }
+            
+            // Calcola quante barre possono essere visualizzate
+            visibleBars = calculateVisibleBars();
+            if (visibleBars <= 0) return;
+            
+            // Limita gli indici per evitare problemi
+            startBar = Math.max(0, Math.min(startBar, chartData.size() - visibleBars));
+            int endBar = Math.min(chartData.size(), startBar + visibleBars);
+            
+            // Calcola scala per i prezzi
+            priceScale = chartHeight / (maxPrice - minPrice);
+            
+            // Disegna la griglia
+            drawGrid(g2, chartWidth, chartHeight);
+            
+            // Disegna assi e label
+            drawAxes(g2, chartWidth, chartHeight);
+            
+            // Disegna le candele
+            for (int i = startBar; i < endBar; i++) {
+                int candleIndex = i - startBar;
+                drawCandle(g2, chartData.get(i), 
+                          chartLeftMargin + candleIndex * (candleWidth + candleGap),
+                          chartTopMargin, chartHeight);
+            }
+            
+            // Disegna crosshair e info
+            if (mouseX >= chartLeftMargin && mouseX <= width - chartRightMargin &&
+                mouseY >= chartTopMargin && mouseY <= height - chartBottomMargin) {
+                
+                drawCrosshair(g2, width, height);
+                
+                // Calcola l'indice della candela puntata
+                int candleIndex = (mouseX - chartLeftMargin) / (candleWidth + candleGap);
+                if (startBar + candleIndex < chartData.size()) {
+                    drawPriceInfo(g2, chartData.get(startBar + candleIndex));
+                }
+            }
+            
+            // Indica se lo scaling dinamico è attivo
+            if (dynamicScaling) {
+                g2.setColor(new Color(0, 200, 0));
+                g2.setFont(new Font("SansSerif", Font.PLAIN, 12));
+                g2.drawString("Auto-Scale: ON", width - 100, 20);
+            } else {
+                g2.setColor(new Color(200, 0, 0));
+                g2.setFont(new Font("SansSerif", Font.PLAIN, 12));
+                g2.drawString("Auto-Scale: OFF", width - 100, 20);
+            }
+        }
+        
+        private void drawGrid(Graphics2D g2, int chartWidth, int chartHeight) {
+            g2.setColor(new Color(50, 50, 50));  // Colore scuro per la griglia
+            
+            // Linee orizzontali
+            int numHLines = 5;
+            for (int i = 0; i <= numHLines; i++) {
+                int y = chartTopMargin + (i * chartHeight / numHLines);
+                g2.drawLine(chartLeftMargin, y, getWidth() - chartRightMargin, y);
+                
+                // Valore prezzo
+                double price = maxPrice - (i * (maxPrice - minPrice) / numHLines);
+                g2.setColor(new Color(200, 200, 200));
+                g2.drawString(String.format("%.2f", price), 5, y + 5);
+                g2.setColor(new Color(50, 50, 50));
+            }
+            
+            // Linee verticali (solo alcune date)
+            if (chartData.size() > 0) {
+                int step = Math.max(1, visibleBars / 8);  // Mostra circa 8 etichette di date
+                for (int i = startBar; i < Math.min(chartData.size(), startBar + visibleBars); i += step) {
+                    int candleIndex = i - startBar;
+                    int x = chartLeftMargin + candleIndex * (candleWidth + candleGap) + candleWidth / 2;
+                    g2.drawLine(x, chartTopMargin, x, chartTopMargin + chartHeight);
+                    
+                    // Data
+                    if (i < chartData.size()) {
+                        g2.setColor(new Color(200, 200, 200));
+                        String dateLabel = chartData.get(i).date;
+                        // Abbreviamo la data per visualizzarla meglio
+                        if (dateLabel.length() > 10) {
+                            dateLabel = dateLabel.substring(0, 10);
+                        }
+                        g2.drawString(dateLabel, x - 25, getHeight() - 10);
+                        g2.setColor(new Color(50, 50, 50));
+                    }
+                }
+            }
+        }
+        
+        private void drawAxes(Graphics2D g2, int chartWidth, int chartHeight) {
+            g2.setColor(new Color(100, 100, 100));
+            
+            // Asse Y (prezzi)
+            g2.drawLine(chartLeftMargin, chartTopMargin, 
+                       chartLeftMargin, chartTopMargin + chartHeight);
+            
+            // Asse X (tempo)
+            g2.drawLine(chartLeftMargin, chartTopMargin + chartHeight, 
+                       chartLeftMargin + chartWidth, chartTopMargin + chartHeight);
+        }
+        
+        private void drawCandle(Graphics2D g2, OHLCVData data, int x, int topMargin, int chartHeight) {
+            // Converte i prezzi in coordinate
+            int openY = topMargin + chartHeight - (int)((data.open - minPrice) * priceScale);
+            int closeY = topMargin + chartHeight - (int)((data.close - minPrice) * priceScale);
+            int highY = topMargin + chartHeight - (int)((data.high - minPrice) * priceScale);
+            int lowY = topMargin + chartHeight - (int)((data.low - minPrice) * priceScale);
+            
+            // Scegli il colore in base al trend
+            Color candleColor = data.isUp() ? bullishColor : bearishColor;
+            g2.setColor(candleColor);
+            
+            // Disegna il corpo della candela
+            int bodyTop = Math.min(openY, closeY);
+            int bodyHeight = Math.max(1, Math.abs(closeY - openY));
+            g2.fillRect(x, bodyTop, candleWidth, bodyHeight);
+            
+            // Disegna lo stoppino superiore e inferiore
+            int centerX = x + candleWidth / 2;
+            g2.drawLine(centerX, highY, centerX, bodyTop);
+            g2.drawLine(centerX, bodyTop + bodyHeight, centerX, lowY);
+        }
+        
+        private void drawCrosshair(Graphics2D g2, int width, int height) {
+            g2.setColor(new Color(150, 150, 150, 150));
+            
+            // Linea orizzontale
+            g2.drawLine(chartLeftMargin, mouseY, width - chartRightMargin, mouseY);
+            
+            // Linea verticale
+            g2.drawLine(mouseX, chartTopMargin, mouseX, height - chartBottomMargin);
+            
+            // Prezzo attuale
+            double price = maxPrice - (mouseY - chartTopMargin) * (maxPrice - minPrice) / 
+                          (height - chartTopMargin - chartBottomMargin);
+            
+            g2.setColor(Color.WHITE);
+            g2.fillRect(width - chartRightMargin + 5, mouseY - 10, 55, 20);
+            g2.setColor(Color.BLACK);
+            g2.drawString(String.format("%.2f", price), width - chartRightMargin + 10, mouseY + 5);
+        }
+        
+        private void drawPriceInfo(Graphics2D g2, OHLCVData data) {
+            String info = String.format("O: %.2f H: %.2f L: %.2f C: %.2f V: %d", 
+                                       data.open, data.high, data.low, data.close, data.volume);
+            
+            g2.setColor(new Color(50, 50, 50, 200));
+            g2.fillRect(mouseX + 15, mouseY - 25, 200, 20);
+            
+            g2.setColor(data.isUp() ? bullishColor : bearishColor);
+            g2.drawString(info, mouseX + 20, mouseY - 10);
+            
+            g2.setColor(Color.WHITE);
+            g2.drawString("Data: " + data.date, 10, 20);
+        }
+    }
+}
