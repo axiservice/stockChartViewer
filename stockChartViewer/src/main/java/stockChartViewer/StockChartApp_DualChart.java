@@ -22,7 +22,11 @@ import com.sun.net.httpserver.HttpServer;
 import stockChartViewer.StockChartApp_V11R01.OHLCVData;
 
 public class StockChartApp_DualChart extends JFrame {
-    private CandlestickChart chartTop;
+    /**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
+	private CandlestickChart chartTop;
     private CandlestickChart chartBottom;
     private JLabel statusLabel;
     private List<OHLCVData> dataTop = new ArrayList<>();
