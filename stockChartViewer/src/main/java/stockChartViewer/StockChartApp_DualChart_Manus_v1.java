@@ -45,6 +45,8 @@ public class StockChartApp_DualChart_Manus_v1 extends JFrame {
     private boolean syncCharts = true; // Sincronizzazione dei due grafici (zoom, scroll)
     private boolean sendToTopChart = true; // Flag per determinare a quale grafico inviare i dati in tempo reale
     
+    EventListnerDDE eLDDE = new EventListnerDDE();
+    
     public StockChartApp_DualChart_Manus_v1() {
         setTitle("Visualizzatore Quotazioni di Borsa - Dual Chart");
         setSize(1200, 800);
@@ -75,15 +77,18 @@ public class StockChartApp_DualChart_Manus_v1 extends JFrame {
         JMenuItem startServerItem = new JMenuItem("Avvia Server REST");
         JMenuItem stopServerItem = new JMenuItem("Ferma Server REST");
         JMenuItem configServerItem = new JMenuItem("Configura Server...");
+        JMenuItem startlistnerDDEItem = new JMenuItem("Avvia listner DDE...");
         
         startServerItem.addActionListener(e -> startServer());
         stopServerItem.addActionListener(e -> stopServer());
         configServerItem.addActionListener(e -> configureServer());
+        startlistnerDDEItem.addActionListener(e -> startListnerDDE());
         
         serverMenu.add(startServerItem);
         serverMenu.add(stopServerItem);
         serverMenu.addSeparator();
         serverMenu.add(configServerItem);
+        serverMenu.add(startlistnerDDEItem);
         
         // Menu View per configurare la visualizzazione
         JMenu viewMenu = new JMenu("Vista");
@@ -239,6 +244,16 @@ public class StockChartApp_DualChart_Manus_v1 extends JFrame {
         
         reader.close();
         return dataList;
+    }
+    
+    private void startListnerDDE() {
+    	Thread t1 = new Thread(new Runnable() {
+    	    @Override
+    	    public void run() {
+    	    	eLDDE.initEventListner();
+    	    }
+    	});  
+    	t1.start();
     }
     
     private void startServer() {
@@ -694,17 +709,11 @@ public class StockChartApp_DualChart_Manus_v1 extends JFrame {
     }
     
     public static void main(String[] args) {
-		
+    	
     	/**
 		 * To run application set JVM ARGUMENTS:  -Djava.library.path=".\lib"
 		 */
-    	Thread t1 = new Thread(new Runnable() {
-    	    @Override
-    	    public void run() {
-    	    	EventListnerDDE.initEventListner();
-    	    }
-    	});  
-    	t1.start();
+
     	
     	
         try {

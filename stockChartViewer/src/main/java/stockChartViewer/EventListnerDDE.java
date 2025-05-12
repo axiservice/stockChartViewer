@@ -9,11 +9,23 @@ import com.pretty_tools.dde.client.DDEClientEventListener;
 
 public class EventListnerDDE {
 
-	public static void initEventListner() {
-		
-		String SERVICE = "FDF";
-		String TOPIC = "Q";
-		
+	static final String SERVICE = "FDF";
+	static final String TOPIC = "Q";
+	
+	// event to wait disconnection
+	final CountDownLatch eventDisconnect = new CountDownLatch(1);
+
+	// DDE client
+	DDEClientConversation conversation;
+	// We can use UNICODE format if server prefers it
+	//conversation.setTextFormat(ClipboardFormat.CF_UNICODETEXT);
+	
+	public EventListnerDDE() {
+		super();
+		this.conversation = new DDEClientConversation();
+	}
+	
+	public void initEventListner() {
 		try {
 
 			// event to wait disconnection
