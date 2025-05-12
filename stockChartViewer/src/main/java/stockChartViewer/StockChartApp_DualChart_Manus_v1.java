@@ -15,6 +15,10 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.border.TitledBorder;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
+import com.pretty_tools.dde.DDEException;
+import com.pretty_tools.dde.DDEMLException;
+import com.pretty_tools.dde.client.DDEClientConversation;
+import com.pretty_tools.dde.client.DDEClientEventListener;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
@@ -690,6 +694,19 @@ public class StockChartApp_DualChart_Manus_v1 extends JFrame {
     }
     
     public static void main(String[] args) {
+		
+    	/**
+		 * To run application set JVM ARGUMENTS:  -Djava.library.path=".\lib"
+		 */
+    	Thread t1 = new Thread(new Runnable() {
+    	    @Override
+    	    public void run() {
+    	    	EventListnerDDE.initEventListner();
+    	    }
+    	});  
+    	t1.start();
+    	
+    	
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (Exception e) {
@@ -1253,4 +1270,7 @@ public class StockChartApp_DualChart_Manus_v1 extends JFrame {
             g2.drawString("Data: " + data.date, 10, 20);
         }
     }
+    
+    
+
 }
