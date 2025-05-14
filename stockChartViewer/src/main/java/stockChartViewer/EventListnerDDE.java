@@ -1,11 +1,18 @@
 package stockChartViewer;
 
+import java.io.IOException;
+import java.security.GeneralSecurityException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 
 import com.pretty_tools.dde.DDEException;
 import com.pretty_tools.dde.DDEMLException;
 import com.pretty_tools.dde.client.DDEClientConversation;
 import com.pretty_tools.dde.client.DDEClientEventListener;
+
+import axi.apis.GoogleSheetApiManager;
+import axi.apis.GoogleSheetApiManager.ItemModel;
 
 public class EventListnerDDE {
 
@@ -20,12 +27,31 @@ public class EventListnerDDE {
 	// We can use UNICODE format if server prefers it
 	//conversation.setTextFormat(ClipboardFormat.CF_UNICODETEXT);
 	
+	String spreadsheetId = "1rWwN4dYpuobNZCmi8rT514JGHdmvZsZNi38Ws2ePCI0";
+	GoogleSheetApiManager gapi;
+	
 	public EventListnerDDE() {
 		super();
+		
+		try {
+			gapi = new GoogleSheetApiManager(spreadsheetId);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (GeneralSecurityException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+//		ItemModel im1 = new ItemModel("MESM5.CME;last"),
+//		          im2 = new ItemModel("MNQM5.CME;last");
+//		itemsMap.put(im1.getItem(), im1);
+//		itemsMap.put(im2.getItem(), im2);
+		
 		this.conversation = new DDEClientConversation();
 	}
 	
-	public void initEventListner() {
+	public void initEventListner(String[] items) {
 		try {
 
 			// event to wait disconnection
@@ -52,6 +78,24 @@ public class EventListnerDDE {
 					
 
 					System.out.println("onItemChanged(" + topic + "," + item + "," + data + ")");
+					
+					
+//					String range = null;
+//					if(item.equals("MESM5.CME;last")) range = "TEST-SPREAD-TRADING!H3:H3";
+//					if(item.equals("MNQM5.CME;last")) range = "TEST-SPREAD-TRADING!H4:H4"; 
+//					GoogleSheetApiManager.sendData(range, data);
+					
+					Map<String, ItemModel> itemsMap = gapi.getItemsMap();
+					ItemModel im = gapi.getItemsMap().get(item);
+					if(im!=null) {
+						im.setData(data);
+					} else {
+						im = gapi.new ItemModel(item, data);
+						itemsMap.put(im.getItem(), im);
+					}
+
+					
+					
 					try{
 						if ("stop".equalsIgnoreCase(data)) {
 							conversation.stopAdvice(item);
@@ -68,7 +112,12 @@ public class EventListnerDDE {
 			System.out.println("Connecting...");
 			conversation.connect(SERVICE, TOPIC);
 			//for(String it : configItemsListnerList) {conversation.startAdvice(it);}
-			conversation.startAdvice("MESM5.CME;last");
+			
+			
+			//conversation.startAdvice("MESM5.CME;last");
+			for(String i : items) conversation.startAdvice(i);
+			
+			
 			//            conversation.startAdvice(item);
 			//            conversation.startAdvice(item2);
 

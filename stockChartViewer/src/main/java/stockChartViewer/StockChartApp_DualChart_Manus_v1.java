@@ -46,8 +46,8 @@ public class StockChartApp_DualChart_Manus_v1 extends JFrame {
     private boolean sendToTopChart = true; // Flag per determinare a quale grafico inviare i dati in tempo reale
     
     EventListnerDDE eLDDE = new EventListnerDDE();
-    
-    public StockChartApp_DualChart_Manus_v1() {
+
+	public StockChartApp_DualChart_Manus_v1() {
         setTitle("Visualizzatore Quotazioni di Borsa - Dual Chart");
         setSize(1200, 800);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -250,7 +250,10 @@ public class StockChartApp_DualChart_Manus_v1 extends JFrame {
     	Thread t1 = new Thread(new Runnable() {
     	    @Override
     	    public void run() {
-    	    	eLDDE.initEventListner();
+    	    	eLDDE.initEventListner(new String[]{
+    	    			"MESM5.CME;last",
+    	    			"MNQM5.CME;last"
+    	    			});
     	    }
     	});  
     	t1.start();
@@ -259,7 +262,7 @@ public class StockChartApp_DualChart_Manus_v1 extends JFrame {
     private void startServer() {
         if (server != null) {
             JOptionPane.showMessageDialog(this, 
-                "Il server √® gi√† in esecuzione sulla porta " + serverPort,
+                "Il server Ë gi‡† in esecuzione sulla porta " + serverPort,
                 "Server gi√† attivo", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
