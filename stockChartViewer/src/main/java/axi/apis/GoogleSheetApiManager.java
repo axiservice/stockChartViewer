@@ -116,8 +116,8 @@ public class GoogleSheetApiManager {
 	}
 	
 	private void taskTimerGoogleSheetApi() {
-        System.out.println("Task performed on: " + new Date() + "n" +
-                "Thread's name: " + Thread.currentThread().getName());
+		Date now = new Date();
+        System.out.println("Task performed on: " + now );
         
         for (Map.Entry<String, ItemModel> e : itemsMap.entrySet()) {
         	ItemModel i = e.getValue();
@@ -127,8 +127,9 @@ public class GoogleSheetApiManager {
 				if(i.item.equals("MNQM5.CME;last")) range = "TEST-BASEDATI!F2:F2"; 
         		sendData(range, i.getData());
         		i.setChanged(false);
+        		System.out.println("++++++++++++++++++++++ CHANGES ++++++++++++++++++++++++++"+i.item+" "+i.getData()+" "+now);
         	} else {
-        		System.out.println("----------------------NO CHANGES-------------------------");
+        		System.out.println("----------------------NO CHANGES-------------------------"+i.item+" "+i.getData()+" "+now);
         	}
         }
         
