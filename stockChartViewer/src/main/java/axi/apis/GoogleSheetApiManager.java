@@ -6,6 +6,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.security.GeneralSecurityException;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -118,6 +119,8 @@ public class GoogleSheetApiManager {
 	private void taskTimerGoogleSheetApi() {
 		Date now = new Date();
         System.out.println("Task performed on: " + now );
+        
+        writeToCSV();
         
         for (Map.Entry<String, ItemModel> e : itemsMap.entrySet()) {
         	ItemModel i = e.getValue();
@@ -234,6 +237,30 @@ public class GoogleSheetApiManager {
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
+	}
+	
+	public void writeToCSV() {
+		String outputPath = "output.csv";
+		List<DataItemsCSVPojo> ergbscpList = new ArrayList<DataItemsCSVPojo>(); 
+		DataItemsCSVPojo dicp = new DataItemsCSVPojo();
+		
+		if(itemsMap.size()<1) return;
+		
+		for (Map.Entry<String, ItemModel> e : itemsMap.entrySet()) {
+			LocalDateTime ldt = LocalDateTime.now(); 
+			ItemModel i = e.getValue();
+			dicp.setDateTime(ldt.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH.mm.ss")));
+			if(i.item.equals("MESM5.CME;last")) {dicp.setName1(i.getItem()); dicp.setVal1(i.getData());} 
+			if(i.item.equals("MNQM5.CME;last")) {dicp.setName2(i.getItem()); dicp.setVal2(i.getData());}  
+        }
+		ergbscpList.add(dicp);
+		
+		try {
+			PojoToCsvConverter.writePojosToCsvFile(ergbscpList, outputPath);
+		} catch (IllegalArgumentException | IllegalAccessException | IOException e1) {
+			e1.printStackTrace();
+		}
+		
 	}
 	
 	/**
