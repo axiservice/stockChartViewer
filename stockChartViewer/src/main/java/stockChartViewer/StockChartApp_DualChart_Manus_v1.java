@@ -45,6 +45,11 @@ public class StockChartApp_DualChart_Manus_v1 extends JFrame {
     private boolean syncCharts = true; // Sincronizzazione dei due grafici (zoom, scroll)
     private boolean sendToTopChart = true; // Flag per determinare a quale grafico inviare i dati in tempo reale
     
+    public static String[] itemListnerArray = new String[]{
+			"CLQ5.CME;last",
+			"QMQ5.CME;last"
+			};
+    
     EventListnerDDE eLDDE = new EventListnerDDE();
 
 	public StockChartApp_DualChart_Manus_v1() {
@@ -250,10 +255,7 @@ public class StockChartApp_DualChart_Manus_v1 extends JFrame {
     	Thread t1 = new Thread(new Runnable() {
     	    @Override
     	    public void run() {
-    	    	eLDDE.initEventListner(new String[]{
-    	    			"MESM5.CME;last",
-    	    			"MNQM5.CME;last"
-    	    			});
+    	    	eLDDE.initEventListner(itemListnerArray);
     	    }
     	});  
     	t1.start();

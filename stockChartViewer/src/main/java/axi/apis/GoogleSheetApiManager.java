@@ -32,6 +32,8 @@ import com.google.api.services.sheets.v4.SheetsScopes;
 import com.google.api.services.sheets.v4.model.UpdateValuesResponse;
 import com.google.api.services.sheets.v4.model.ValueRange;
 
+import stockChartViewer.StockChartApp_DualChart_Manus_v1;
+
 
 public class GoogleSheetApiManager {
 	private static final String APPLICATION_NAME = "Google Sheets API TS";
@@ -126,8 +128,8 @@ public class GoogleSheetApiManager {
         	ItemModel i = e.getValue();
         	if(i.isChanged) {
 				String range = null;
-				if(i.item.equals("MESM5.CME;last")) range = "TEST-BASEDATI!F1:F1";
-				if(i.item.equals("MNQM5.CME;last")) range = "TEST-BASEDATI!F2:F2"; 
+				if(i.item.equals(StockChartApp_DualChart_Manus_v1.itemListnerArray[0])) range = "TEST-BASEDATI!F1:F1";
+				if(i.item.equals(StockChartApp_DualChart_Manus_v1.itemListnerArray[1])) range = "TEST-BASEDATI!F2:F2"; 
         		sendData(range, i.getData());
         		i.setChanged(false);
         		System.out.println("++++++++++++++++++++++ CHANGES ++++++++++++++++++++++++++"+i.item+" "+i.getData()+" "+now);
@@ -250,8 +252,8 @@ public class GoogleSheetApiManager {
 			LocalDateTime ldt = LocalDateTime.now(); 
 			ItemModel i = e.getValue();
 			dicp.setDateTime(ldt.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH.mm.ss")));
-			if(i.item.equals("MESM5.CME;last")) {dicp.setName1(i.getItem()); dicp.setVal1(i.getData());} 
-			if(i.item.equals("MNQM5.CME;last")) {dicp.setName2(i.getItem()); dicp.setVal2(i.getData());}  
+			if(i.item.equals(StockChartApp_DualChart_Manus_v1.itemListnerArray[0]/*"MESM5.CME;last"*/)) {dicp.setName1(i.getItem()); dicp.setVal1(i.getData());} 
+			if(i.item.equals(StockChartApp_DualChart_Manus_v1.itemListnerArray[1]/*"MNQM5.CME;last"*/)) {dicp.setName2(i.getItem()); dicp.setVal2(i.getData());}  
         }
 		ergbscpList.add(dicp);
 		
